@@ -64,6 +64,7 @@ class Board
 
   def update_bot(new_position, old_position=nil)
     cell_at(old_position).clean if old_position
+    yield
     cell_at(new_position).place_bot
   end
 

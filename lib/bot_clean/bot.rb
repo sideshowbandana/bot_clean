@@ -2,13 +2,16 @@ class Bot
   attr_reader :brain
   
   class Brain
-    attr_accessor :current_position, :next_target, :board, :moves,
-            :depth
+    attr_accessor :current_position, :next_target, :board, :moves, :depth
     
-    def initialize(board, moves, depth)
+    def initialize(board, moves, next_target = nil)
       @board = board.clone
       @moves = moves.clone
-      @depth = depth
+      @depth = moves.count
+      @next_target = next_target || next_targets.sort{|a,b|
+        current_position.distance_to(a) <=> current_position.distance_to(b)
+      }.first
+      
     end
 
     def current_position
@@ -19,17 +22,13 @@ class Bot
       @previous_position ||= moves[0..-2].inject(&:+)
     end
 
-    def next_target
-      return @next_target if @next_target
-      if weighted_targets = board.dirty_positions.map{|dirty|
-           [dirty - current_position, dirty]
-         }.sort{|a,b| a[0] <=> b[0] }.first
-        @next_target = weighted_targets.last
-      end
+    def next_targets
+      board.dirty_positions.map{|dirty|
+           [current_position.distance_to(dirty), dirty]
+      }.sort{|a,b| a[0] <=> b[0] }.map(&:last)
     end
 
     def clean_target
-      @next_target = nil
       board.clean(current_position)
     end
 
@@ -38,42 +37,51 @@ class Bot
     end
 
     def visit_cell
-      if current_cell.dirty?
-        moves << Board::CLEAN_MOVE
-        clean_target
+      moves << next_move if next_move
+      board.update_bot(current_position, previous_position) do 
+        if current_cell.dirty?
+          moves << Board::CLEAN_MOVE
+          clean_target
+        end
       end
       current_cell.visited = true
-      board.update_bot(current_position, previous_position)
     end
 
     def next_moves
-      board.available_moves(current_position).sort{|a,b|
-        move_value(a[0]) <=>  move_value(b[0]) 
+      moves = board.available_moves(current_position).select{|move|
+        good_move?(move[0])
       }
+      moves
     end
 
     def next_move
-      next_moves.first[0]
+      next_moves.first[0] if next_moves.first
     end
 
-    def move_value(move)
-      diff = next_target - (current_position + move)
-      diff.x.abs + diff.y.abs
+    def good_move?(move)
+      future_position = current_position + move
+      future_position.distance_to(next_target) < current_position.distance_to(next_target)
     end
   end
 
   def initialize(position, board)
-    brain = Brain.new(board, [Position.new(*position)], 0)
+    brain = Brain.new(board, [Position.new(*position)])
     determine_path(brain)
   end
   
   def next_move
-    @current_move ||= 0
-    Board.get_move(@best_path[@current_move += 1])
+    # the first element is our starting point. The next element is our
+    # next best move
+    Board.get_move(@best_path[1])
   end
 
   def determine_path(brain)
     board = brain.board
+
+    # stop if we're already above a better answer
+    if @min_moves && brain.depth >= @min_moves
+      return
+    end
 
     current_position = brain.current_position
     previous_position = brain.previous_position
@@ -89,17 +97,14 @@ class Bot
       end
       return
     end
+    
 
-
-    if board.dirty?
-      determine_path(Brain.new(board, (brain.moves + [brain.next_move]), brain.depth + 1))
+    if target = brain.next_targets.first
+      new_brain = Brain.new(board, brain.moves, target)
+      
+      determine_path(new_brain)
     end
 
     nil
-  end
-
-  def move_value(position)
-    diff = next_target - position
-    diff.x.abs + diff.y.abs
   end
 end

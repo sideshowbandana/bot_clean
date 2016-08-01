@@ -9,6 +9,6 @@ class Runner
     (0...5).each do |i|
       board[i] = gets.strip
     end
-    puts Bot.new(Position.new(*pos), Board.from_array(board)).next_move
+    puts Bot.new(Position.new(x,y), Board.from_array(board)).next_move
   end
 end
